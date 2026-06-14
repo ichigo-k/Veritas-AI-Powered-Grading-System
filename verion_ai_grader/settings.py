@@ -38,6 +38,9 @@ AWS_ACCESS_KEY_ID = _require_env('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = _require_env('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = _require_env('AWS_REGION')
 BEDROCK_MODEL_ID = _require_env('BEDROCK_MODEL_ID')
+S3_BUCKET_NAME = _require_env('S3_BUCKET_NAME')
+S3_UPLOAD_PREFIX = os.environ.get('S3_UPLOAD_PREFIX', 'grader-uploads').strip('/')
+S3_PRESIGNED_URL_EXPIRES_IN = int(os.environ.get('S3_PRESIGNED_URL_EXPIRES_IN', '3600'))
 
 # ---------------------------------------------------------------------------
 # Security

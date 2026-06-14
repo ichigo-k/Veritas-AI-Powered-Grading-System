@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from django.conf import settings
 from django.http import Http404
 
-from grader.bedrock import BedrockClient, BedrockGradingError
+from grader.bedrock import BedrockClient, BedrockGradingError, FileAttachment
 from grader.models import (
     AnswerFeedback,
     Assessment,
@@ -28,6 +28,7 @@ from grader.models import (
 )
 from grader.plagiarism import PlagiarismScanner
 from grader.scoring import cap_criterion_score, compute_final_score
+from grader.s3 import S3Helper, S3ResolutionError
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,12 @@ class GraderService:
             model_id=settings.BEDROCK_MODEL_ID,
             max_tokens=settings.BEDROCK_MAX_TOKENS,
             region=settings.AWS_REGION,
+        )
+        self._s3_helper = S3Helper(
+            bucket_name=settings.S3_BUCKET_NAME,
+            region=settings.AWS_REGION,
+            upload_prefix=settings.S3_UPLOAD_PREFIX,
+            presigned_url_expires_in=settings.S3_PRESIGNED_URL_EXPIRES_IN,
         )
 
     # ---------------------------------------------------------------------------
@@ -374,13 +381,23 @@ class GraderService:
 
             # Step 2c: Call Bedrock
             try:
+                attachment = None
+                if answer.file_url:
+                    resolved_file = self._s3_helper.resolve_object(answer.file_url)
+                    attachment = FileAttachment(
+                        media_type=resolved_file.content_type,
+                        data=resolved_file.body,
+                        filename=resolved_file.filename,
+                    )
+
                 grade_response = self._bedrock_client.grade_answer(
                     question_body=question.body,
                     answer_text=answer.answer_text or "",
                     rubric_criteria=rubric_list,
                     question_marks=question.marks,
+                    attachment=attachment,
                 )
-            except BedrockGradingError as exc:
+            except (BedrockGradingError, S3ResolutionError) as exc:
                 # Step 2d: Bedrock error — score=0, bedrock_error=True, continue
                 logger.error(
                     "BedrockGradingError for attempt %d, question %d: %s",

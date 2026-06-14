@@ -10,6 +10,7 @@ or timeout errors. A second failure raises BedrockGradingError.
 # Feature: verion-ai-grader, Property 4: Bedrock failure for one answer does not prevent others
 """
 
+import base64
 import json
 import logging
 import time
@@ -52,6 +53,13 @@ class GradeResponse:
     overall_feedback: str = ""
     flag: str = "none"
     flag_reason: str = ""
+
+
+@dataclass(frozen=True)
+class FileAttachment:
+    media_type: str
+    data: bytes
+    filename: str | None = None
 
 
 class BedrockGradingError(Exception):
@@ -114,6 +122,7 @@ class BedrockClient:
         question_body: str,
         answer_text: str,
         rubric_criteria: list[dict],
+        has_attachment: bool = False,
     ) -> str:
         """Build a rubric-guided grading prompt."""
         rubric_lines = "\n".join(
@@ -136,7 +145,9 @@ Rubric:
 {rubric_lines}
 
 Student Answer:
-{answer_text}
+{answer_text if answer_text else '[See attached file]'}
+
+{('The student response includes an attached file that must be graded together with the prompt.' if has_attachment else '')}
 
 Return ONLY a JSON object with this exact structure:
 {{
@@ -158,6 +169,7 @@ Important:
         question_body: str,
         answer_text: str,
         question_marks: int,
+        has_attachment: bool = False,
     ) -> str:
         """Build a holistic grading prompt (no rubric)."""
         return f"""You are an academic grader. Grade the following student answer holistically.
@@ -172,7 +184,9 @@ Important:
 Question: {question_body}
 
 Student Answer:
-{answer_text}
+{answer_text if answer_text else '[See attached file]'}
+
+{('The student response includes an attached file that must be graded together with the prompt.' if has_attachment else '')}
 
 Score the answer holistically out of {question_marks} marks.
 Return ONLY a JSON object:
@@ -304,8 +318,40 @@ Important:
             return text[s:e+1]
         return None
 
-    def _build_invoke_body(self, prompt: str) -> dict:
+    def _attachment_block(self, attachment: FileAttachment) -> dict:
+        encoded = base64.b64encode(attachment.data).decode("ascii")
+        if attachment.media_type == "application/pdf":
+            return {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": attachment.media_type,
+                    "data": encoded,
+                },
+            }
+
+        if attachment.media_type.startswith("image/"):
+            return {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": attachment.media_type,
+                    "data": encoded,
+                },
+            }
+
+        raise BedrockGradingError(f"Unsupported attachment media type: {attachment.media_type}")
+
+    def _build_invoke_body(self, prompt: str, attachment: FileAttachment | None = None) -> dict:
         """Build model-family specific Bedrock InvokeModel body."""
+        content_blocks = [{"type": "text", "text": prompt}] if self._is_anthropic_model() else [{"text": prompt}]
+        if attachment is not None:
+            if not self._is_anthropic_model():
+                raise BedrockGradingError(
+                    "File attachments are only supported for Anthropic Claude models in this implementation."
+                )
+            content_blocks.append(self._attachment_block(attachment))
+
         if self._is_anthropic_model():
             return {
                 "anthropic_version": "bedrock-2023-05-31",
@@ -313,9 +359,7 @@ Important:
                 "messages": [
                     {
                         "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt}
-                        ],
+                        "content": content_blocks,
                     }
                 ],
             }
@@ -325,9 +369,7 @@ Important:
                 "messages": [
                     {
                         "role": "user",
-                        "content": [
-                            {"text": prompt}
-                        ],
+                        "content": [{"text": prompt}],
                     }
                 ],
                 "inferenceConfig": {
@@ -340,9 +382,7 @@ Important:
             "messages": [
                 {
                     "role": "user",
-                    "content": [
-                        {"text": prompt}
-                    ],
+                        "content": [{"text": prompt}],
                 }
             ],
         }
@@ -369,7 +409,7 @@ Important:
     # Task 8.4 — Retry logic
     # ---------------------------------------------------------------------------
 
-    def _invoke_with_retry(self, prompt: str) -> str:
+    def _invoke_with_retry(self, prompt: str, attachment: FileAttachment | None = None) -> str:
         """
         Invoke the Bedrock model with one retry on throttling/timeout.
 
@@ -380,7 +420,7 @@ Important:
 
         for attempt in range(self._MAX_RETRIES + 1):
             try:
-                request_body = self._build_invoke_body(prompt)
+                request_body = self._build_invoke_body(prompt, attachment)
                 response = self._client.invoke_model(
                     modelId=self._model_id,
                     contentType="application/json",
@@ -432,6 +472,7 @@ Important:
         answer_text: str,
         rubric_criteria: list[dict],
         question_marks: int,
+        attachment: FileAttachment | None = None,
     ) -> GradeResponse:
         """
         Grade a student answer using the configured Bedrock model.
@@ -453,10 +494,10 @@ Important:
             BedrockGradingError: If the model invocation or response parsing fails.
         """
         if rubric_criteria:
-            prompt = self._build_rubric_prompt(question_body, answer_text, rubric_criteria)
-            raw = self._invoke_with_retry(prompt)
+            prompt = self._build_rubric_prompt(question_body, answer_text, rubric_criteria, has_attachment=attachment is not None)
+            raw = self._invoke_with_retry(prompt, attachment)
             return self._parse_rubric_response(raw)
         else:
-            prompt = self._build_holistic_prompt(question_body, answer_text, question_marks)
-            raw = self._invoke_with_retry(prompt)
+            prompt = self._build_holistic_prompt(question_body, answer_text, question_marks, has_attachment=attachment is not None)
+            raw = self._invoke_with_retry(prompt, attachment)
             return self._parse_holistic_response(raw)

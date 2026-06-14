@@ -1,6 +1,6 @@
 # verion-ai-grader
 
-A standalone Django microservice that acts as the AI grading engine for the `ai-powered-grading-system`. It connects to the shared PostgreSQL database, grades subjective answers using AWS Bedrock with rubric-guided prompts, detects plagiarism via answer hash comparison, and writes final scores back to the database.
+A standalone Django microservice that acts as the AI grading engine for the `ai-powered-grading-system`. It connects to the shared PostgreSQL database, grades subjective answers using AWS Bedrock with rubric-guided prompts, can fetch uploaded answer files from S3 and pass them directly to multimodal Bedrock models, detects plagiarism via answer hash comparison, and writes final scores back to the database.
 
 The main system handles MCQ auto-scoring at submission time. This service handles everything after that — subjective grading, score finalisation, and feedback storage.
 
@@ -13,7 +13,7 @@ Student submits
   → main system scores MCQ, writes partial score to assessment_attempts.score
   → lecturer triggers grading (sets gradingStatus = GRADING)
   → this service is called via POST /api/grade/assessment/{id}/
-  → reads subjective answers, calls AWS Bedrock per answer
+  → reads subjective answers, fetches S3 files when present, calls AWS Bedrock per answer
   → adds subjective scores to the existing MCQ score
   → writes final score back to assessment_attempts.score
   → writes per-answer AI feedback to grader_answerfeedback
@@ -99,6 +99,7 @@ uv run python manage.py runserver 0.0.0.0:8000
 | `AWS_SECRET_ACCESS_KEY` | AWS secret access key |
 | `AWS_REGION` | AWS region where Bedrock is available, e.g. `us-east-1` |
 | `BEDROCK_MODEL_ID` | Bedrock model identifier, e.g. `us.anthropic.claude-sonnet-4-6` |
+| `S3_BUCKET_NAME` | S3 bucket that stores uploaded answer files |
 
 ### Optional
 
@@ -109,6 +110,8 @@ uv run python manage.py runserver 0.0.0.0:8000
 | `ALLOWED_HOSTS` | `*` when DEBUG=True, else `[]` | Comma-separated list of allowed hostnames |
 | `BEDROCK_MAX_TOKENS` | `2048` | Max tokens per Bedrock invocation |
 | `GRADING_CONCURRENCY` | `10` | Number of attempts graded in parallel during batch grading |
+| `S3_UPLOAD_PREFIX` | `grader-uploads` | Prefix used when resolving plain filenames to S3 keys |
+| `S3_PRESIGNED_URL_EXPIRES_IN` | `3600` | Lifetime in seconds for generated presigned URLs |
 
 ---
 
@@ -231,6 +234,8 @@ final_score = min(existing_mcq_score + sum(subjective_scores), assessment.totalM
 - Result capped at `assessment.totalMarks`, minimum 0
 
 If Bedrock fails for a specific answer, that answer scores 0 and grading continues for the rest. The error is recorded in `grader_answerfeedback.bedrock_error` and `grader_gradingresult.error_notes`.
+
+If a subjective answer includes a file reference, the service resolves it from S3, infers the file type from metadata or extension, and sends the raw bytes directly to Bedrock. This path currently supports Anthropic Claude models for PDF and image attachments.
 
 ---
 
