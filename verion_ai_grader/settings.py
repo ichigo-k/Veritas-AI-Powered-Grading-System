@@ -37,7 +37,17 @@ DJANGO_DB_URL = os.environ.get('DJANGO_DB_URL')  # optional — falls back to SQ
 AWS_ACCESS_KEY_ID = _require_env('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = _require_env('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = _require_env('AWS_REGION')
-BEDROCK_MODEL_ID = _require_env('BEDROCK_MODEL_ID')
+
+USE_OLLAMA = os.environ.get('USE_OLLAMA', 'False').lower() == 'true'
+if USE_OLLAMA:
+    OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434').strip('/')
+    OLLAMA_MODEL_ID = _require_env('OLLAMA_MODEL_ID')
+    BEDROCK_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID')
+else:
+    BEDROCK_MODEL_ID = _require_env('BEDROCK_MODEL_ID')
+    OLLAMA_BASE_URL = None
+    OLLAMA_MODEL_ID = None
+
 S3_BUCKET_NAME = _require_env('S3_BUCKET_NAME')
 S3_UPLOAD_PREFIX = os.environ.get('S3_UPLOAD_PREFIX', 'grader-uploads').strip('/')
 S3_PRESIGNED_URL_EXPIRES_IN = int(os.environ.get('S3_PRESIGNED_URL_EXPIRES_IN', '3600'))

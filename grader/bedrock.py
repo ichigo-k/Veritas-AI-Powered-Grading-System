@@ -5,7 +5,7 @@ Wraps boto3's bedrock-runtime client to invoke a configured model with
 structured prompts and parse the JSON response into GradeResponse objects.
 
 Retry logic: one retry with exponential backoff (1s, then 2s) on throttling
-or timeout errors. A second failure raises BedrockGradingError.
+or timeout errors. A second failure raises GradingError.
 
 # Feature: verion-ai-grader, Property 4: Bedrock failure for one answer does not prevent others
 """
@@ -15,63 +15,14 @@ import json
 import logging
 import time
 import re
-from dataclasses import dataclass, field
 
 import boto3
 from botocore.exceptions import ClientError
 
+from grader.exceptions import GradingError
+from grader.types import CriterionScore, GradeResponse, FileAttachment
+
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Task 8.5 — Data types
-# ---------------------------------------------------------------------------
-
-@dataclass
-class CriterionScore:
-    """Score and justification for a single rubric criterion."""
-    criterion: str
-    awarded: int
-    max: int
-    justification: str
-
-
-@dataclass
-class GradeResponse:
-    """
-    Parsed response from the Bedrock model for a single answer.
-
-    Attributes:
-        criteria_scores: Per-criterion scores (empty list for holistic grading).
-        holistic_score: Score for holistic grading (None for rubric grading).
-        overall_feedback: Textual feedback for the answer.
-        flag: One of "none", "suspicious", "incomplete", "off_topic".
-        flag_reason: Explanation of the flag (empty string if flag is "none").
-    """
-    criteria_scores: list[CriterionScore] = field(default_factory=list)
-    holistic_score: int | None = None
-    overall_feedback: str = ""
-    flag: str = "none"
-    flag_reason: str = ""
-
-
-@dataclass(frozen=True)
-class FileAttachment:
-    media_type: str
-    data: bytes
-    filename: str | None = None
-
-
-class BedrockGradingError(Exception):
-    """
-    Raised when the Bedrock client fails to grade an answer.
-
-    This includes:
-    - boto3 ClientError after retries are exhausted
-    - JSON parse failure on the model response
-    - Missing required fields in the model response
-    """
-    pass
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +186,7 @@ Important:
         required_fields = {"criteria_scores", "overall_feedback", "flag", "flag_reason"}
         missing = required_fields - data.keys()
         if missing:
-            raise BedrockGradingError(
+            raise GradingError(
                 f"Bedrock response missing required fields: {missing}. "
                 f"Raw response (first 200 chars): {raw[:200]!r}"
             )
@@ -340,14 +291,14 @@ Important:
                 },
             }
 
-        raise BedrockGradingError(f"Unsupported attachment media type: {attachment.media_type}")
+        raise GradingError(f"Unsupported attachment media type: {attachment.media_type}")
 
     def _build_invoke_body(self, prompt: str, attachment: FileAttachment | None = None) -> dict:
         """Build model-family specific Bedrock InvokeModel body."""
         content_blocks = [{"type": "text", "text": prompt}] if self._is_anthropic_model() else [{"text": prompt}]
         if attachment is not None:
             if not self._is_anthropic_model():
-                raise BedrockGradingError(
+                raise GradingError(
                     "File attachments are only supported for Anthropic Claude models in this implementation."
                 )
             content_blocks.append(self._attachment_block(attachment))
@@ -401,7 +352,7 @@ Important:
         except (KeyError, IndexError, TypeError):
             pass
 
-        raise BedrockGradingError(
+        raise GradingError(
             f"Unexpected Bedrock response format. Keys: {list(body.keys())}"
         )
 
@@ -414,7 +365,7 @@ Important:
         Invoke the Bedrock model with one retry on throttling/timeout.
 
         Returns the raw text content from the model response.
-        Raises BedrockGradingError after retries are exhausted.
+        Raises GradingError after retries are exhausted.
         """
         last_error: Exception | None = None
 
@@ -448,17 +399,17 @@ Important:
                     continue
 
                 # Non-retryable error or retries exhausted
-                raise BedrockGradingError(
+                raise GradingError(
                     f"Bedrock ClientError ({error_code}) after {attempt + 1} attempt(s): {exc}"
                 ) from exc
 
             except Exception as exc:
-                raise BedrockGradingError(
+                raise GradingError(
                     f"Unexpected error invoking Bedrock: {exc}"
                 ) from exc
 
         # Should not reach here, but satisfy type checker
-        raise BedrockGradingError(
+        raise GradingError(
             f"Bedrock invocation failed after retries: {last_error}"
         )
 
@@ -491,7 +442,7 @@ Important:
             GradeResponse with parsed scores and feedback.
 
         Raises:
-            BedrockGradingError: If the model invocation or response parsing fails.
+            GradingError: If the model invocation or response parsing fails.
         """
         if rubric_criteria:
             prompt = self._build_rubric_prompt(question_body, answer_text, rubric_criteria, has_attachment=attachment is not None)
