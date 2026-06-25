@@ -95,6 +95,8 @@ class GraderService:
                 base_url=settings.OLLAMA_BASE_URL,
                 model_id=settings.OLLAMA_MODEL_ID,
                 max_tokens=settings.BEDROCK_MAX_TOKENS,
+                timeout=settings.OLLAMA_TIMEOUT,
+                num_ctx=settings.OLLAMA_NUM_CTX,
             )
         else:
             self._ai_client = BedrockClient(
@@ -102,12 +104,19 @@ class GraderService:
                 max_tokens=settings.BEDROCK_MAX_TOKENS,
                 region=settings.AWS_REGION,
             )
-        self._s3_helper = S3Helper(
-            bucket_name=settings.S3_BUCKET_NAME,
-            region=settings.AWS_REGION,
-            upload_prefix=settings.S3_UPLOAD_PREFIX,
-            presigned_url_expires_in=settings.S3_PRESIGNED_URL_EXPIRES_IN,
-        )
+        # S3 is optional: only build the helper when a bucket is configured.
+        # Without it, answers with file attachments are flagged per-answer
+        # rather than crashing the service (relevant for Ollama-only setups).
+        if settings.S3_BUCKET_NAME:
+            self._s3_helper = S3Helper(
+                bucket_name=settings.S3_BUCKET_NAME,
+                region=settings.AWS_REGION,
+                upload_prefix=settings.S3_UPLOAD_PREFIX,
+                presigned_url_expires_in=settings.S3_PRESIGNED_URL_EXPIRES_IN,
+                endpoint_url=settings.AWS_S3_ENDPOINT_URL,
+            )
+        else:
+            self._s3_helper = None
 
     # ---------------------------------------------------------------------------
     # Task 9.3 — Batch grading
@@ -393,6 +402,11 @@ class GraderService:
             try:
                 attachment = None
                 if answer.file_url:
+                    if self._s3_helper is None:
+                        raise S3ResolutionError(
+                            "Answer has a file attachment but S3 is not configured "
+                            "(set S3_BUCKET_NAME to enable attachment grading)."
+                        )
                     resolved_file = self._s3_helper.resolve_object(answer.file_url)
                     attachment = FileAttachment(
                         media_type=resolved_file.content_type,
@@ -416,7 +430,7 @@ class GraderService:
                     exc,
                 )
                 error_notes_parts.append(
-                    f"Bedrock error for question {question.id}: {exc}"
+                    f"AI grading error for question {question.id}: {exc}"
                 )
                 feedbacks.append(
                     AnswerFeedbackResult(

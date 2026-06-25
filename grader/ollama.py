@@ -26,10 +26,19 @@ class OllamaClient:
     _MAX_RETRIES = 1
     _BACKOFF_SECONDS = [1, 2]
 
-    def __init__(self, base_url: str, model_id: str, max_tokens: int) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model_id: str,
+        max_tokens: int,
+        timeout: int = 300,
+        num_ctx: int = 4096,
+    ) -> None:
         self._base_url = base_url.rstrip('/')
         self._model_id = model_id
         self._max_tokens = max_tokens
+        self._timeout = timeout
+        self._num_ctx = num_ctx
 
     def _build_rubric_prompt(
         self,
@@ -228,22 +237,30 @@ Important:
 
         url = f"{self._base_url}/api/generate"
 
-        # Ollama doesn't support PDF directly in 'generate' the same way as Claude via Bedrock
-        # For now, we'll just send the prompt.
-        # If it's an image, Ollama supports 'images' field (base64 strings)
-
         payload = {
             "model": self._model_id,
             "prompt": prompt,
             "stream": False,
             "options": {
                 "num_predict": self._max_tokens,
+                "num_ctx": self._num_ctx,
             }
         }
 
-        if attachment and attachment.media_type.startswith("image/"):
-            import base64
-            payload["images"] = [base64.b64encode(attachment.data).decode("utf-8")]
+        if attachment is not None:
+            # Ollama's /api/generate accepts base64 images for vision-capable
+            # models (e.g. llava, llama3.2-vision). Non-image attachments such
+            # as PDFs cannot be passed through, so we fail loudly rather than
+            # silently grading the answer without its attachment.
+            if attachment.media_type.startswith("image/"):
+                import base64
+                payload["images"] = [base64.b64encode(attachment.data).decode("utf-8")]
+            else:
+                raise GradingError(
+                    f"Ollama client cannot grade attachments of type "
+                    f"'{attachment.media_type}'. Only images are supported, and "
+                    f"only with a vision-capable model. Use Bedrock for PDF/document grading."
+                )
 
         for attempt in range(self._MAX_RETRIES + 1):
             try:
@@ -252,7 +269,7 @@ Important:
                     data=json.dumps(payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"}
                 )
-                with urllib.request.urlopen(req, timeout=60) as response:
+                with urllib.request.urlopen(req, timeout=self._timeout) as response:
                     res_data = json.loads(response.read().decode("utf-8"))
                     return res_data.get("response", "")
 

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from urllib.parse import unquote, urlparse
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 
@@ -32,11 +33,24 @@ class S3Helper:
         region: str,
         upload_prefix: str = "",
         presigned_url_expires_in: int = 3600,
+        endpoint_url: str | None = None,
     ) -> None:
         self._default_bucket = bucket_name
         self._upload_prefix = upload_prefix.strip("/")
         self._presigned_url_expires_in = presigned_url_expires_in
-        self._client = boto3.client("s3", region_name=region)
+
+        client_kwargs: dict = {"region_name": region}
+        if endpoint_url:
+            # Pointing at an S3-compatible server (MinIO, LocalStack, etc.).
+            # These require path-style addressing — bucket in the path, not the
+            # host — since "bucket.localhost" doesn't resolve. Force SigV4 so
+            # presigned URLs validate correctly.
+            client_kwargs["endpoint_url"] = endpoint_url
+            client_kwargs["config"] = Config(
+                s3={"addressing_style": "path"},
+                signature_version="s3v4",
+            )
+        self._client = boto3.client("s3", **client_kwargs)
 
     def resolve_object(self, file_ref: str) -> S3ObjectData:
         bucket, key_candidates = self._resolve_bucket_and_key_candidates(file_ref)
