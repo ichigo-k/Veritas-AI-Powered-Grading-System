@@ -4,11 +4,16 @@ URL patterns for the grader app.
 
 from django.urls import path
 
-from grader.views import AssessmentGradeView, AttemptGradeView
+from grader.views import AssessmentGradeView, AttemptGradeView, HealthCheckView
 
 app_name = "grader"
 
 urlpatterns = [
+    path(
+        "api/health/",
+        HealthCheckView.as_view(),
+        name="health-check",
+    ),
     path(
         "api/grade/assessment/<int:assessment_id>/",
         AssessmentGradeView.as_view(),

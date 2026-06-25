@@ -114,3 +114,41 @@ class AttemptGradeView(APIView):
 
         serializer = SingleGradingResultSerializer(result)
         return Response(serializer.data, status=200)
+
+
+class HealthCheckView(APIView):
+    """
+    GET /api/health/
+
+    Lightweight health check — no authentication required.
+    Returns 200 with service status. Used by the main system to verify
+    the grader is reachable before triggering grading.
+    """
+
+    # No authentication for health checks
+    authentication_classes = []
+    permission_classes = []
+
+    @extend_schema(
+        summary="Health check",
+        description="Returns 200 if the grader service is running and can reach the database.",
+        responses={
+            200: OpenApiResponse(description="Service is healthy."),
+            503: OpenApiResponse(description="Service is unhealthy (database unreachable)."),
+        },
+        tags=["Health"],
+    )
+    def get(self, request: Request) -> Response:
+        # Verify database connectivity with a lightweight query
+        from django.db import connections
+        try:
+            conn = connections["neon"]
+            conn.ensure_connection()
+        except Exception as exc:
+            logger.error("Health check failed: database unreachable — %s", exc)
+            return Response(
+                {"status": "unhealthy", "detail": "Database unreachable"},
+                status=503,
+            )
+
+        return Response({"status": "ok"}, status=200)
