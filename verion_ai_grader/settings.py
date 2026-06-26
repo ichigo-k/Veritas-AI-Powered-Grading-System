@@ -36,22 +36,40 @@ DATABASE_URL = _require_env('DATABASE_URL')
 DJANGO_DB_URL = os.environ.get('DJANGO_DB_URL')  # optional — falls back to SQLite
 
 # ---------------------------------------------------------------------------
-# AI grading client — Bedrock (default) or Ollama
+# AI grading client — Bedrock, Ollama, or Gemini
 # ---------------------------------------------------------------------------
-# When USE_OLLAMA=True the app talks to a local/remote Ollama server and does
-# NOT require AWS credentials or a Bedrock model id. AWS settings are only
+# Select with AI_PROVIDER = 'bedrock' (default) | 'ollama' | 'gemini'.
+# Only the chosen provider's settings are required. AWS settings are only
 # required for Bedrock, or when S3 file-attachment grading is enabled.
 
-USE_OLLAMA = os.environ.get('USE_OLLAMA', 'False').lower() == 'true'
+AI_PROVIDER = os.environ.get('AI_PROVIDER', 'bedrock').strip().lower()
 
-if USE_OLLAMA:
+# Backward compatibility: USE_OLLAMA=True still selects Ollama.
+if os.environ.get('USE_OLLAMA', 'False').lower() == 'true':
+    AI_PROVIDER = 'ollama'
+
+if AI_PROVIDER not in ('bedrock', 'ollama', 'gemini'):
+    raise ImproperlyConfigured(
+        f"AI_PROVIDER must be one of 'bedrock', 'ollama', 'gemini'; got '{AI_PROVIDER}'."
+    )
+
+USE_OLLAMA = AI_PROVIDER == 'ollama'  # retained for existing references
+
+# Defaults — only the active provider's values are validated below.
+BEDROCK_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID')
+OLLAMA_BASE_URL = None
+OLLAMA_MODEL_ID = None
+GEMINI_API_KEY = None
+GEMINI_MODEL_ID = None
+
+if AI_PROVIDER == 'ollama':
     OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434').strip('/')
     OLLAMA_MODEL_ID = _require_env('OLLAMA_MODEL_ID')
-    BEDROCK_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID')
-else:
+elif AI_PROVIDER == 'gemini':
+    GEMINI_API_KEY = _require_env('GEMINI_API_KEY')
+    GEMINI_MODEL_ID = os.environ.get('GEMINI_MODEL_ID', 'gemini-2.5-flash')
+else:  # bedrock
     BEDROCK_MODEL_ID = _require_env('BEDROCK_MODEL_ID')
-    OLLAMA_BASE_URL = None
-    OLLAMA_MODEL_ID = None
 
 # OLLAMA_TIMEOUT — seconds to wait for a single Ollama response (default 300).
 # Local CPU inference can be slow, so this is generous by default.
@@ -60,6 +78,9 @@ OLLAMA_TIMEOUT = int(os.environ.get('OLLAMA_TIMEOUT', '300'))
 # OLLAMA_NUM_CTX — context window size in tokens (default 4096). Must be large
 # enough to hold the rubric prompt without silent truncation.
 OLLAMA_NUM_CTX = int(os.environ.get('OLLAMA_NUM_CTX', '4096'))
+
+# GEMINI_TIMEOUT — seconds to wait for a single Gemini API response.
+GEMINI_TIMEOUT = int(os.environ.get('GEMINI_TIMEOUT', '120'))
 
 # ---------------------------------------------------------------------------
 # AWS / S3 — required for Bedrock, optional for Ollama
@@ -70,12 +91,12 @@ OLLAMA_NUM_CTX = int(os.environ.get('OLLAMA_NUM_CTX', '4096'))
 
 S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME')
 
-if USE_OLLAMA:
-    # AWS only required when S3 attachment grading is on.
-    _aws_required = bool(S3_BUCKET_NAME)
-else:
-    # Bedrock always needs AWS credentials.
+# Bedrock always needs AWS credentials. Ollama/Gemini only need them when S3
+# attachment grading is enabled (i.e. a bucket is configured).
+if AI_PROVIDER == 'bedrock':
     _aws_required = True
+else:
+    _aws_required = bool(S3_BUCKET_NAME)
 
 if _aws_required:
     AWS_ACCESS_KEY_ID = _require_env('AWS_ACCESS_KEY_ID')

@@ -17,6 +17,7 @@ from django.http import Http404
 
 from grader.bedrock import BedrockClient
 from grader.ollama import OllamaClient
+from grader.gemini import GeminiClient
 from grader.exceptions import GradingError
 from grader.types import CriterionScore, GradeResponse, FileAttachment
 from grader.models import (
@@ -90,13 +91,20 @@ class GraderService:
     """
 
     def __init__(self) -> None:
-        if settings.USE_OLLAMA:
+        if settings.AI_PROVIDER == 'ollama':
             self._ai_client = OllamaClient(
                 base_url=settings.OLLAMA_BASE_URL,
                 model_id=settings.OLLAMA_MODEL_ID,
                 max_tokens=settings.BEDROCK_MAX_TOKENS,
                 timeout=settings.OLLAMA_TIMEOUT,
                 num_ctx=settings.OLLAMA_NUM_CTX,
+            )
+        elif settings.AI_PROVIDER == 'gemini':
+            self._ai_client = GeminiClient(
+                api_key=settings.GEMINI_API_KEY,
+                model_id=settings.GEMINI_MODEL_ID,
+                max_tokens=settings.BEDROCK_MAX_TOKENS,
+                timeout=settings.GEMINI_TIMEOUT,
             )
         else:
             self._ai_client = BedrockClient(
