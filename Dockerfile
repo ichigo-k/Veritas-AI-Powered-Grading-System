@@ -60,15 +60,17 @@ USER grader
 # Expose the application port
 EXPOSE 8000
 
-# Health check — hits the unauthenticated health endpoint
+# Health check — hits the unauthenticated health endpoint.
+# Uses $PORT when the platform injects one (Railway, etc.), else 8000.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-     CMD curl -sf http://localhost:8000/api/health/ || exit 1
+     CMD curl -sf http://localhost:${PORT:-8000}/api/health/ || exit 1
 
 # Run with gunicorn.
 # Workers default to 4; override via GUNICORN_WORKERS env var.
+# Binds $PORT when the platform provides one (Railway), else 8000.
 # Timeout is generous (300s) because Bedrock / Ollama calls can be slow.
 CMD sh -c "gunicorn verion_ai_grader.wsgi:application \
-     --bind 0.0.0.0:8000 \
+     --bind 0.0.0.0:${PORT:-8000} \
      --workers ${GUNICORN_WORKERS:-4} \
      --timeout ${GUNICORN_TIMEOUT:-300} \
      --graceful-timeout 30 \
