@@ -32,7 +32,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Required environment variables
 # ---------------------------------------------------------------------------
 
-DATABASE_URL = _require_env('DATABASE_URL')
+DATABASE_URL = os.environ.get('DATABASE_URL')
 DJANGO_DB_URL = os.environ.get('DJANGO_DB_URL')  # optional — falls back to SQLite
 
 # ---------------------------------------------------------------------------
@@ -64,12 +64,12 @@ GEMINI_MODEL_ID = None
 
 if AI_PROVIDER == 'ollama':
     OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434').strip('/')
-    OLLAMA_MODEL_ID = _require_env('OLLAMA_MODEL_ID')
+    OLLAMA_MODEL_ID = os.environ.get('OLLAMA_MODEL_ID', 'llama3.1')
 elif AI_PROVIDER == 'gemini':
-    GEMINI_API_KEY = _require_env('GEMINI_API_KEY')
+    GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
     GEMINI_MODEL_ID = os.environ.get('GEMINI_MODEL_ID', 'gemini-2.5-flash')
 else:  # bedrock
-    BEDROCK_MODEL_ID = _require_env('BEDROCK_MODEL_ID')
+    BEDROCK_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-3-sonnet-20240229-v1:0')
 
 # OLLAMA_TIMEOUT — seconds to wait for a single Ollama response (default 300).
 # Local CPU inference can be slow, so this is generous by default.
@@ -98,14 +98,9 @@ if AI_PROVIDER == 'bedrock':
 else:
     _aws_required = bool(S3_BUCKET_NAME)
 
-if _aws_required:
-    AWS_ACCESS_KEY_ID = _require_env('AWS_ACCESS_KEY_ID')
-    AWS_SECRET_ACCESS_KEY = _require_env('AWS_SECRET_ACCESS_KEY')
-    AWS_REGION = _require_env('AWS_REGION')
-else:
-    AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
-    AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
-    AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 
 S3_UPLOAD_PREFIX = os.environ.get('S3_UPLOAD_PREFIX', 'grader-uploads').strip('/')
 S3_PRESIGNED_URL_EXPIRES_IN = int(os.environ.get('S3_PRESIGNED_URL_EXPIRES_IN', '3600'))
@@ -118,7 +113,10 @@ AWS_S3_ENDPOINT_URL = os.environ.get('AWS_S3_ENDPOINT_URL') or None
 # Security
 # ---------------------------------------------------------------------------
 
-SECRET_KEY = _require_env('DJANGO_SECRET_KEY')
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'dev-only-change-this-from-the-admin-console-deployment-environment',
+)
 
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
@@ -143,6 +141,7 @@ INSTALLED_APPS = [
     'drf_spectacular_sidecar',
     'grader',
     'auth_keys',
+    'admin_console',
 ]
 
 MIDDLEWARE = [
@@ -191,9 +190,18 @@ else:
         'NAME': BASE_DIR / 'django_system.db',
     }
 
+_neon_db = (
+    dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+    if DATABASE_URL
+    else {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'unconfigured_shared.db',
+    }
+)
+
 DATABASES = {
     'default': _django_db,
-    'neon': dj_database_url.config(default=DATABASE_URL, conn_max_age=600),
+    'neon': _neon_db,
 }
 
 DATABASE_ROUTERS = ['grader.db_router.GraderRouter']

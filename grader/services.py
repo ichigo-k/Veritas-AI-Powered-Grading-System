@@ -15,9 +15,13 @@ from datetime import datetime, timezone
 from django.conf import settings
 from django.http import Http404
 
-from grader.bedrock import BedrockClient
-from grader.ollama import OllamaClient
-from grader.gemini import GeminiClient
+from admin_console.runtime import (
+    FallbackAIClient,
+    apply_shared_database_config,
+    get_provider_clients,
+    get_runtime_int,
+    get_storage_config,
+)
 from grader.exceptions import GradingError
 from grader.types import CriterionScore, GradeResponse, FileAttachment
 from grader.models import (
@@ -91,37 +95,21 @@ class GraderService:
     """
 
     def __init__(self) -> None:
-        if settings.AI_PROVIDER == 'ollama':
-            self._ai_client = OllamaClient(
-                base_url=settings.OLLAMA_BASE_URL,
-                model_id=settings.OLLAMA_MODEL_ID,
-                max_tokens=settings.BEDROCK_MAX_TOKENS,
-                timeout=settings.OLLAMA_TIMEOUT,
-                num_ctx=settings.OLLAMA_NUM_CTX,
-            )
-        elif settings.AI_PROVIDER == 'gemini':
-            self._ai_client = GeminiClient(
-                api_key=settings.GEMINI_API_KEY,
-                model_id=settings.GEMINI_MODEL_ID,
-                max_tokens=settings.BEDROCK_MAX_TOKENS,
-                timeout=settings.GEMINI_TIMEOUT,
-            )
-        else:
-            self._ai_client = BedrockClient(
-                model_id=settings.BEDROCK_MODEL_ID,
-                max_tokens=settings.BEDROCK_MAX_TOKENS,
-                region=settings.AWS_REGION,
-            )
+        apply_shared_database_config()
+        self._ai_client = FallbackAIClient(get_provider_clients())
         # S3 is optional: only build the helper when a bucket is configured.
         # Without it, answers with file attachments are flagged per-answer
         # rather than crashing the service (relevant for Ollama-only setups).
-        if settings.S3_BUCKET_NAME:
+        storage_config = get_storage_config()
+        if storage_config:
             self._s3_helper = S3Helper(
-                bucket_name=settings.S3_BUCKET_NAME,
-                region=settings.AWS_REGION,
-                upload_prefix=settings.S3_UPLOAD_PREFIX,
-                presigned_url_expires_in=settings.S3_PRESIGNED_URL_EXPIRES_IN,
-                endpoint_url=settings.AWS_S3_ENDPOINT_URL,
+                bucket_name=storage_config.bucket_name,
+                region=storage_config.region,
+                upload_prefix=storage_config.upload_prefix,
+                presigned_url_expires_in=storage_config.presigned_url_expires_in,
+                endpoint_url=storage_config.endpoint_url,
+                aws_access_key_id=storage_config.aws_access_key_id,
+                aws_secret_access_key=storage_config.aws_secret_access_key,
             )
         else:
             self._s3_helper = None
@@ -196,7 +184,8 @@ class GraderService:
 
         # Step 8 & 9: Grade all attempts concurrently
         results: list[SingleGradingResult] = []
-        with ThreadPoolExecutor(max_workers=settings.GRADING_CONCURRENCY) as executor:
+        concurrency = get_runtime_int("grading_concurrency", settings.GRADING_CONCURRENCY)
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
             futures = {
                 executor.submit(
                     self._grade_single_attempt_worker,
@@ -484,7 +473,7 @@ class GraderService:
                     question_id=question.id,
                     total_score=answer_total,
                     max_score=float(question.marks),
-                    flag=grade_response.flag,
+                    flag="" if grade_response.flag == "none" else grade_response.flag,
                     flag_reason=grade_response.flag_reason,
                     criteria_feedback=criteria_feedback,
                     bedrock_error=False,

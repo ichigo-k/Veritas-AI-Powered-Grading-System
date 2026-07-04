@@ -3,10 +3,13 @@ URL configuration for verion_ai_grader project.
 """
 
 from django.urls import include, path
+from django.views.generic import RedirectView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from rest_framework.permissions import AllowAny
 
 urlpatterns = [
+    path('', RedirectView.as_view(pattern_name='admin_console:dashboard', permanent=False), name='home'),
+    path('console/', include('admin_console.urls')),
     path('', include('grader.urls')),
 
     # API docs — public, no API key required to browse

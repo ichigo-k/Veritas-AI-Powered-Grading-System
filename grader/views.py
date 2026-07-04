@@ -6,8 +6,10 @@ POST /api/grade/attempt/{attempt_id}/        — grade a single attempt
 """
 
 import logging
+import time
 
 from django.http import Http404
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -16,6 +18,8 @@ from rest_framework.views import APIView
 from grader.serializers import BatchGradingResultSerializer, SingleGradingResultSerializer
 
 from grader.services import GraderService
+from admin_console.models import RequestMetric
+from admin_console.runtime import apply_shared_database_config
 
 logger = logging.getLogger(__name__)
 
@@ -56,16 +60,37 @@ class AssessmentGradeView(APIView):
         tags=["Grading"],
     )
     def post(self, request: Request, assessment_id: int) -> Response:
+        metric = RequestMetric.objects.create(
+            endpoint="assessment",
+            target_id=assessment_id,
+            status=RequestMetric.STATUS_RUNNING,
+        )
+        started = time.monotonic()
         service = GraderService()
         try:
             result = service.grade_assessment(assessment_id)
         except Http404 as exc:
+            metric.status = RequestMetric.STATUS_ERROR
+            metric.detail = str(exc)
+            metric.finished_at = timezone.now()
+            metric.duration_ms = int((time.monotonic() - started) * 1000)
+            metric.save(update_fields=["status", "detail", "finished_at", "duration_ms"])
             return Response({"detail": str(exc)}, status=404)
         except Exception as exc:
             logger.exception("Unexpected error grading assessment %d", assessment_id)
+            metric.status = RequestMetric.STATUS_ERROR
+            metric.detail = str(exc)[:1000]
+            metric.finished_at = timezone.now()
+            metric.duration_ms = int((time.monotonic() - started) * 1000)
+            metric.save(update_fields=["status", "detail", "finished_at", "duration_ms"])
             return Response({"detail": "Internal server error."}, status=500)
 
         serializer = BatchGradingResultSerializer(result)
+        metric.status = RequestMetric.STATUS_SUCCESS
+        metric.detail = f"Graded {result.graded_count} attempt(s)."
+        metric.finished_at = timezone.now()
+        metric.duration_ms = int((time.monotonic() - started) * 1000)
+        metric.save(update_fields=["status", "detail", "finished_at", "duration_ms"])
         return Response(serializer.data, status=200)
 
 
@@ -103,16 +128,37 @@ class AttemptGradeView(APIView):
         tags=["Grading"],
     )
     def post(self, request: Request, attempt_id: int) -> Response:
+        metric = RequestMetric.objects.create(
+            endpoint="attempt",
+            target_id=attempt_id,
+            status=RequestMetric.STATUS_RUNNING,
+        )
+        started = time.monotonic()
         service = GraderService()
         try:
             result = service.grade_attempt(attempt_id)
         except Http404 as exc:
+            metric.status = RequestMetric.STATUS_ERROR
+            metric.detail = str(exc)
+            metric.finished_at = timezone.now()
+            metric.duration_ms = int((time.monotonic() - started) * 1000)
+            metric.save(update_fields=["status", "detail", "finished_at", "duration_ms"])
             return Response({"detail": str(exc)}, status=404)
         except Exception as exc:
             logger.exception("Unexpected error grading attempt %d", attempt_id)
+            metric.status = RequestMetric.STATUS_ERROR
+            metric.detail = str(exc)[:1000]
+            metric.finished_at = timezone.now()
+            metric.duration_ms = int((time.monotonic() - started) * 1000)
+            metric.save(update_fields=["status", "detail", "finished_at", "duration_ms"])
             return Response({"detail": "Internal server error."}, status=500)
 
         serializer = SingleGradingResultSerializer(result)
+        metric.status = RequestMetric.STATUS_SUCCESS
+        metric.detail = f"Score {result.score}."
+        metric.finished_at = timezone.now()
+        metric.duration_ms = int((time.monotonic() - started) * 1000)
+        metric.save(update_fields=["status", "detail", "finished_at", "duration_ms"])
         return Response(serializer.data, status=200)
 
 
@@ -142,6 +188,7 @@ class HealthCheckView(APIView):
         # Verify database connectivity with a lightweight query
         from django.db import connections
         try:
+            apply_shared_database_config()
             conn = connections["neon"]
             conn.ensure_connection()
         except Exception as exc:

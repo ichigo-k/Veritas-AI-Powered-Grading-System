@@ -53,10 +53,21 @@ class BedrockClient:
     _THROTTLING_ERRORS = {"ThrottlingException", "ServiceUnavailableException"}
     _TIMEOUT_ERRORS = {"RequestTimeoutException", "ReadTimeoutError"}
 
-    def __init__(self, model_id: str, max_tokens: int, region: str) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        max_tokens: int,
+        region: str,
+        aws_access_key_id: str | None = None,
+        aws_secret_access_key: str | None = None,
+    ) -> None:
         self._model_id = model_id
         self._max_tokens = max_tokens
-        self._client = boto3.client("bedrock-runtime", region_name=region)
+        client_kwargs = {"region_name": region}
+        if aws_access_key_id and aws_secret_access_key:
+            client_kwargs["aws_access_key_id"] = aws_access_key_id
+            client_kwargs["aws_secret_access_key"] = aws_secret_access_key
+        self._client = boto3.client("bedrock-runtime", **client_kwargs)
 
     def _is_anthropic_model(self) -> bool:
         return self._model_id.startswith("anthropic.")

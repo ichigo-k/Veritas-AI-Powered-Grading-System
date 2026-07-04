@@ -34,12 +34,17 @@ class S3Helper:
         upload_prefix: str = "",
         presigned_url_expires_in: int = 3600,
         endpoint_url: str | None = None,
+        aws_access_key_id: str | None = None,
+        aws_secret_access_key: str | None = None,
     ) -> None:
         self._default_bucket = bucket_name
         self._upload_prefix = upload_prefix.strip("/")
         self._presigned_url_expires_in = presigned_url_expires_in
 
         client_kwargs: dict = {"region_name": region}
+        if aws_access_key_id and aws_secret_access_key:
+            client_kwargs["aws_access_key_id"] = aws_access_key_id
+            client_kwargs["aws_secret_access_key"] = aws_secret_access_key
         if endpoint_url:
             # Pointing at an S3-compatible server (MinIO, LocalStack, etc.).
             # These require path-style addressing — bucket in the path, not the
