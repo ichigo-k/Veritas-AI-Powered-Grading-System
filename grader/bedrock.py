@@ -48,8 +48,8 @@ class BedrockClient:
     """
 
     # Retry configuration
-    _MAX_RETRIES = 1
-    _BACKOFF_SECONDS = [1, 2]
+    _MAX_RETRIES = 3
+    _BACKOFF_SECONDS = [5, 15, 30]
     _THROTTLING_ERRORS = {"ThrottlingException", "ServiceUnavailableException"}
     _TIMEOUT_ERRORS = {"RequestTimeoutException", "ReadTimeoutError"}
 
@@ -60,9 +60,12 @@ class BedrockClient:
         region: str,
         aws_access_key_id: str | None = None,
         aws_secret_access_key: str | None = None,
+        request_delay: float = 3.0,
     ) -> None:
         self._model_id = model_id
         self._max_tokens = max_tokens
+        self._request_delay = max(0.0, request_delay)
+        self._last_request_at = 0.0
         client_kwargs = {"region_name": region}
         if aws_access_key_id and aws_secret_access_key:
             client_kwargs["aws_access_key_id"] = aws_access_key_id
@@ -392,6 +395,10 @@ Important:
 
         for attempt in range(self._MAX_RETRIES + 1):
             try:
+                elapsed = time.monotonic() - self._last_request_at
+                if elapsed < self._request_delay:
+                    time.sleep(self._request_delay - elapsed)
+                self._last_request_at = time.monotonic()
                 request_body = self._build_invoke_body(prompt, attachment)
                 response = self._client.invoke_model(
                     modelId=self._model_id,

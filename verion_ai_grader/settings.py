@@ -256,6 +256,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # Optional environment variables with validation
 # ---------------------------------------------------------------------------
 
+BEDROCK_REQUEST_DELAY = float(os.environ.get('BEDROCK_REQUEST_DELAY', '3'))
 # BEDROCK_MAX_TOKENS — integer, default 2048
 _bedrock_max_tokens_raw = os.environ.get('BEDROCK_MAX_TOKENS', '2048')
 try:

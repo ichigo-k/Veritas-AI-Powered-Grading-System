@@ -95,7 +95,7 @@ class GraderService:
         elif settings.AI_PROVIDER == "gemini":
             self._ai_client = GeminiClient(settings.GEMINI_API_KEY, settings.GEMINI_MODEL_ID, settings.BEDROCK_MAX_TOKENS, settings.GEMINI_TIMEOUT)
         else:
-            self._ai_client = BedrockClient(settings.BEDROCK_MODEL_ID, settings.BEDROCK_MAX_TOKENS, settings.AWS_REGION, settings.AWS_ACCESS_KEY_ID, settings.AWS_SECRET_ACCESS_KEY)
+            self._ai_client = BedrockClient(settings.BEDROCK_MODEL_ID, settings.BEDROCK_MAX_TOKENS, settings.AWS_REGION, settings.AWS_ACCESS_KEY_ID, settings.AWS_SECRET_ACCESS_KEY, settings.BEDROCK_REQUEST_DELAY)
         # S3 is optional: only build the helper when a bucket is configured.
         # Without it, answers with file attachments are flagged per-answer
         # rather than crashing the service (relevant for Ollama-only setups).
