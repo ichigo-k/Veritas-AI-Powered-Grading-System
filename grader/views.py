@@ -18,7 +18,7 @@ from rest_framework.views import APIView
 from grader.serializers import BatchGradingResultSerializer, SingleGradingResultSerializer
 
 from grader.services import GraderService
-from grader.models import Assessment, AssessmentAttempt, AnswerFeedback, GradingResult
+from grader.models import Assessment, AssessmentAttempt, AssessmentSection, AnswerFeedback, GradingResult, Question
 from grader.sqs import enqueue_assessment
 from admin_console.models import RequestMetric
 from admin_console.runtime import apply_shared_database_config
@@ -83,12 +83,14 @@ class AssessmentGradeView(APIView):
     @staticmethod
     def _status_payload(assessment_id: int) -> dict:
         attempt_ids = list(AssessmentAttempt.objects.filter(assessment_id=assessment_id, status__in=("SUBMITTED", "TIMED_OUT")).values_list("id", flat=True))
+        subjective_sections = AssessmentSection.objects.filter(assessment_id=assessment_id, type="SUBJECTIVE").values_list("id", flat=True)
+        subjective_question_count = Question.objects.filter(assessment_id=assessment_id, section_id__in=subjective_sections).count()
         completed = GradingResult.objects.filter(attempt_id__in=attempt_ids)
         feedback = AnswerFeedback.objects.filter(grading_result__in=completed)
-        total = feedback.count()
+        processed = feedback.count()
         failed = feedback.filter(bedrock_error=True).count()
         assessment = Assessment.objects.get(id=assessment_id)
-        return {"assessment_id": assessment_id, "status": "COMPLETED" if assessment.grading_status == "GRADED" else "GRADING", "total_attempts": len(attempt_ids), "completed_attempts": completed.count(), "total_questions": total, "passed_questions": total - failed, "failed_questions": failed, "complete": assessment.grading_status == "GRADED"}
+        return {"assessment_id": assessment_id, "status": "COMPLETED" if assessment.grading_status == "GRADED" else "GRADING", "total_attempts": len(attempt_ids), "completed_attempts": completed.count(), "total_questions": subjective_question_count * len(attempt_ids), "processed_questions": processed, "passed_questions": processed - failed, "failed_questions": failed, "complete": assessment.grading_status == "GRADED"}
 
 
 class AssessmentGradeStatusView(APIView):
