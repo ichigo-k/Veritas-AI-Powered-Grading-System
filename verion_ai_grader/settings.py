@@ -101,6 +101,9 @@ else:
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+SQS_QUEUE_URL = os.environ.get('SQS_QUEUE_URL', '')
+SQS_WAIT_TIME_SECONDS = int(os.environ.get('SQS_WAIT_TIME_SECONDS', '20'))
+SQS_VISIBILITY_TIMEOUT = int(os.environ.get('SQS_VISIBILITY_TIMEOUT', '1800'))
 
 S3_UPLOAD_PREFIX = os.environ.get('S3_UPLOAD_PREFIX', 'grader-uploads').strip('/')
 S3_PRESIGNED_URL_EXPIRES_IN = int(os.environ.get('S3_PRESIGNED_URL_EXPIRES_IN', '3600'))

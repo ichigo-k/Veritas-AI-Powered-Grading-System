@@ -1,4 +1,4 @@
-﻿"""
+"""
 REST API views for the grader service.
 
 POST /api/grade/assessment/{assessment_id}/  — batch grade all attempts
@@ -18,6 +18,8 @@ from rest_framework.views import APIView
 from grader.serializers import BatchGradingResultSerializer, SingleGradingResultSerializer
 
 from grader.services import GraderService
+from grader.models import Assessment, AssessmentAttempt, AnswerFeedback, GradingResult
+from grader.sqs import enqueue_assessment
 from admin_console.models import RequestMetric
 from admin_console.runtime import apply_shared_database_config
 
@@ -60,38 +62,41 @@ class AssessmentGradeView(APIView):
         tags=["Grading"],
     )
     def post(self, request: Request, assessment_id: int) -> Response:
-        metric = RequestMetric.objects.create(
-            endpoint="assessment",
-            target_id=assessment_id,
-            status=RequestMetric.STATUS_RUNNING,
-        )
-        started = time.monotonic()
-        service = GraderService()
         try:
-            result = service.grade_assessment(assessment_id)
-        except Http404 as exc:
-            metric.status = RequestMetric.STATUS_ERROR
-            metric.detail = str(exc)
-            metric.finished_at = timezone.now()
-            metric.duration_ms = int((time.monotonic() - started) * 1000)
-            metric.save(update_fields=["status", "detail", "finished_at", "duration_ms"])
-            return Response({"detail": str(exc)}, status=404)
-        except Exception as exc:
-            logger.exception("Unexpected error grading assessment %d", assessment_id)
-            metric.status = RequestMetric.STATUS_ERROR
-            metric.detail = str(exc)[:1000]
-            metric.finished_at = timezone.now()
-            metric.duration_ms = int((time.monotonic() - started) * 1000)
-            metric.save(update_fields=["status", "detail", "finished_at", "duration_ms"])
-            return Response({"detail": "Internal server error."}, status=500)
+            assessment = Assessment.objects.get(id=assessment_id)
+        except Assessment.DoesNotExist:
+            return Response({"detail": f"Assessment {assessment_id} not found."}, status=404)
+        if assessment.grading_status == "GRADED":
+            return Response(self._status_payload(assessment_id), status=200)
+        if assessment.grading_status == "GRADING":
+            return Response(self._status_payload(assessment_id), status=202)
+        try:
+            Assessment.objects.filter(id=assessment_id).update(grading_status="GRADING")
+            message_id = enqueue_assessment(assessment_id)
+        except Exception:
+            logger.exception("Failed to enqueue assessment grading: assessment_id=%d", assessment_id)
+            Assessment.objects.filter(id=assessment_id).update(grading_status="SUBMITTED")
+            return Response({"detail": "Unable to queue grading."}, status=503)
+        logger.info("Assessment grading queued: assessment_id=%d message_id=%s", assessment_id, message_id)
+        return Response({"assessment_id": assessment_id, "status": "QUEUED", "message_id": message_id, "status_url": f"/api/grade/assessment/{assessment_id}/status/"}, status=202)
 
-        serializer = BatchGradingResultSerializer(result)
-        metric.status = RequestMetric.STATUS_SUCCESS
-        metric.detail = f"Graded {result.graded_count} attempt(s)."
-        metric.finished_at = timezone.now()
-        metric.duration_ms = int((time.monotonic() - started) * 1000)
-        metric.save(update_fields=["status", "detail", "finished_at", "duration_ms"])
-        return Response(serializer.data, status=200)
+    @staticmethod
+    def _status_payload(assessment_id: int) -> dict:
+        attempt_ids = list(AssessmentAttempt.objects.filter(assessment_id=assessment_id, status__in=("SUBMITTED", "TIMED_OUT")).values_list("id", flat=True))
+        completed = GradingResult.objects.filter(attempt_id__in=attempt_ids)
+        feedback = AnswerFeedback.objects.filter(grading_result__in=completed)
+        total = feedback.count()
+        failed = feedback.filter(bedrock_error=True).count()
+        assessment = Assessment.objects.get(id=assessment_id)
+        return {"assessment_id": assessment_id, "status": "COMPLETED" if assessment.grading_status == "GRADED" else "GRADING", "total_attempts": len(attempt_ids), "completed_attempts": completed.count(), "total_questions": total, "passed_questions": total - failed, "failed_questions": failed, "complete": assessment.grading_status == "GRADED"}
+
+
+class AssessmentGradeStatusView(APIView):
+    def get(self, request: Request, assessment_id: int) -> Response:
+        try:
+            return Response(AssessmentGradeView._status_payload(assessment_id))
+        except Assessment.DoesNotExist:
+            return Response({"detail": f"Assessment {assessment_id} not found."}, status=404)
 
 
 class AttemptGradeView(APIView):
