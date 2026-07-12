@@ -8,20 +8,15 @@ Bedrock invocation per answer, score computation, and database persistence.
 """
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from django.conf import settings
 from django.http import Http404
 
-from admin_console.runtime import (
-    FallbackAIClient,
-    apply_shared_database_config,
-    get_provider_clients,
-    get_runtime_int,
-    get_storage_config,
-)
+from grader.bedrock import BedrockClient
+from grader.gemini import GeminiClient
+from grader.ollama import OllamaClient
 from grader.exceptions import GradingError
 from grader.types import CriterionScore, GradeResponse, FileAttachment
 from grader.models import (
@@ -95,12 +90,16 @@ class GraderService:
     """
 
     def __init__(self) -> None:
-        apply_shared_database_config()
-        self._ai_client = FallbackAIClient(get_provider_clients())
+        if settings.AI_PROVIDER == "ollama":
+            self._ai_client = OllamaClient(settings.OLLAMA_BASE_URL, settings.OLLAMA_MODEL_ID, settings.BEDROCK_MAX_TOKENS, settings.OLLAMA_TIMEOUT, settings.OLLAMA_NUM_CTX)
+        elif settings.AI_PROVIDER == "gemini":
+            self._ai_client = GeminiClient(settings.GEMINI_API_KEY, settings.GEMINI_MODEL_ID, settings.BEDROCK_MAX_TOKENS, settings.GEMINI_TIMEOUT)
+        else:
+            self._ai_client = BedrockClient(settings.BEDROCK_MODEL_ID, settings.BEDROCK_MAX_TOKENS, settings.AWS_REGION, settings.AWS_ACCESS_KEY_ID, settings.AWS_SECRET_ACCESS_KEY)
         # S3 is optional: only build the helper when a bucket is configured.
         # Without it, answers with file attachments are flagged per-answer
         # rather than crashing the service (relevant for Ollama-only setups).
-        storage_config = get_storage_config()
+        storage_config = None
         if storage_config:
             self._s3_helper = S3Helper(
                 bucket_name=storage_config.bucket_name,
@@ -184,28 +183,8 @@ class GraderService:
 
         # Step 8 & 9: Grade all attempts concurrently
         results: list[SingleGradingResult] = []
-        concurrency = get_runtime_int("grading_concurrency", settings.GRADING_CONCURRENCY)
-        with ThreadPoolExecutor(max_workers=concurrency) as executor:
-            futures = {
-                executor.submit(
-                    self._grade_single_attempt_worker,
-                    attempt,
-                    flagged_attempt_ids,
-                    assessment.total_marks,
-                ): attempt
-                for attempt in attempts
-            }
-            for future in as_completed(futures):
-                attempt = futures[future]
-                try:
-                    result = future.result()
-                    results.append(result)
-                except Exception:
-                    # Worker already handles its own exceptions and returns a
-                    # SingleGradingResult; this branch is a safety net.
-                    logger.exception(
-                        "Unexpected error collecting result for attempt %d", attempt.id
-                    )
+        for attempt in attempts:
+            results.append(self._grade_single_attempt_worker(attempt, flagged_attempt_ids, assessment.total_marks))
 
         # Step 10: Mark assessment as GRADED
         Assessment.objects.filter(id=assessment_id).update(grading_status="GRADED")
@@ -538,3 +517,5 @@ class GraderService:
             answer_feedbacks=feedbacks,
             error_notes=error_notes,
         )
+
+

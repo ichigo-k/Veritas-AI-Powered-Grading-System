@@ -141,7 +141,6 @@ INSTALLED_APPS = [
     'drf_spectacular_sidecar',
     'grader',
     'auth_keys',
-    'admin_console',
 ]
 
 MIDDLEWARE = [
@@ -268,7 +267,7 @@ except ValueError as exc:
     ) from exc
 
 # GRADING_CONCURRENCY — integer, default 10
-_grading_concurrency_raw = os.environ.get('GRADING_CONCURRENCY', '10')
+_grading_concurrency_raw = os.environ.get('GRADING_CONCURRENCY', '1')
 try:
     GRADING_CONCURRENCY: int = int(_grading_concurrency_raw)
 except ValueError as exc:
@@ -276,3 +275,5 @@ except ValueError as exc:
         f"Environment variable 'GRADING_CONCURRENCY' must be a valid integer, "
         f"got: '{_grading_concurrency_raw}'"
     ) from exc
+
+

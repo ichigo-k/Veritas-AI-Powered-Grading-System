@@ -1,4 +1,4 @@
-"""
+﻿"""
 REST API views for the grader service.
 
 POST /api/grade/assessment/{assessment_id}/  — batch grade all attempts

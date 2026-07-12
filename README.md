@@ -109,7 +109,7 @@ uv run python manage.py runserver 0.0.0.0:8000
 | `DEBUG` | `False` | Set to `True` for local development |
 | `ALLOWED_HOSTS` | `*` when DEBUG=True, else `[]` | Comma-separated list of allowed hostnames |
 | `BEDROCK_MAX_TOKENS` | `2048` | Max tokens per Bedrock invocation |
-| `GRADING_CONCURRENCY` | `10` | Number of attempts graded in parallel during batch grading |
+| `GRADING_CONCURRENCY` | `1` | Retained for compatibility; batch grading processes one attempt at a time |
 | `S3_UPLOAD_PREFIX` | `grader-uploads` | Prefix used when resolving plain filenames to S3 keys |
 | `S3_PRESIGNED_URL_EXPIRES_IN` | `3600` | Lifetime in seconds for generated presigned URLs |
 
@@ -158,12 +158,12 @@ Interactive docs available at:
 
 ### `POST /api/grade/assessment/{assessment_id}/`
 
-Grades all `SUBMITTED` and `TIMED_OUT` attempts for an assessment concurrently.
+Grades all `SUBMITTED` and `TIMED_OUT` attempts for an assessment sequentially.
 
 **What it does:**
 1. Fetches all eligible attempts
 2. Runs plagiarism detection across all answer hashes
-3. Grades each subjective answer via Bedrock (up to `GRADING_CONCURRENCY` in parallel)
+3. Grades each subjective answer via Bedrock (one at a time)
 4. Adds subjective scores to the existing MCQ score on each attempt
 5. Writes final `score` to `assessment_attempts`
 6. Persists per-answer feedback to `grader_answerfeedback`
@@ -269,3 +269,4 @@ uv run python manage.py generate_api_key --label "label"   # create an API key
 uv run python manage.py runserver 0.0.0.0:8000             # dev server
 uv run pytest                                              # run tests
 ```
+
