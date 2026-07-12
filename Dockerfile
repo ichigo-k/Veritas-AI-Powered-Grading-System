@@ -72,8 +72,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Timeout is generous (300s) because Bedrock / Ollama calls can be slow.
 CMD sh -c "gunicorn verion_ai_grader.wsgi:application \
      --bind 0.0.0.0:${PORT:-8000} \
-     --workers ${GUNICORN_WORKERS:-4} \
-     --timeout ${GUNICORN_TIMEOUT:-300} \
+     --workers ${GUNICORN_WORKERS:-1} \
+     --timeout ${GUNICORN_TIMEOUT:-1800} \
      --graceful-timeout 30 \
      --keep-alive 5 \
      --max-requests 1000 \
@@ -81,3 +81,4 @@ CMD sh -c "gunicorn verion_ai_grader.wsgi:application \
      --access-logfile - \
      --error-logfile -"
                                                             
+
