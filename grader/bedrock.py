@@ -183,7 +183,7 @@ Important:
             )
 
         try:
-            data = json.loads(candidate)
+            data = self._parse_json_candidate(candidate)
         except json.JSONDecodeError as exc:
             logger.warning("Failed to decode extracted JSON from Bedrock response: %s", exc)
             return GradeResponse(
@@ -233,7 +233,7 @@ Important:
             )
 
         try:
-            data = json.loads(candidate)
+            data = self._parse_json_candidate(candidate)
         except json.JSONDecodeError:
             logger.warning("Failed to decode extracted JSON from Bedrock response (holistic)")
             return GradeResponse(
@@ -263,6 +263,16 @@ Important:
             flag=data.get("flag", "none"),
             flag_reason=data.get("flag_reason", ""),
         )
+
+    def _parse_json_candidate(self, candidate: str) -> dict:
+        """Decode model JSON, tolerating unescaped backslashes in feedback text."""
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            # Models sometimes emit LaTeX or paths inside JSON strings without
+            # escaping the backslash. Repair only invalid JSON escapes.
+            repaired = re.sub(r"\\(?![\"\\/bfnrtu])", r"\\\\", candidate)
+            return json.loads(repaired)
 
     def _extract_json_candidate(self, text: str) -> str | None:
         """Try to extract a JSON object from model output.
