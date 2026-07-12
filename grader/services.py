@@ -186,6 +186,19 @@ class GraderService:
         for attempt in attempts:
             results.append(self._grade_single_attempt_worker(attempt, flagged_attempt_ids, assessment.total_marks))
 
+        total_questions = sum(len(result.answer_feedbacks) for result in results)
+        failed_questions = sum(
+            1
+            for result in results
+            for feedback in result.answer_feedbacks
+            if feedback.bedrock_error
+        )
+        logger.info(
+            "Assessment grading summary: assessment_id=%d attempts=%d questions_total=%d questions_passed=%d questions_failed=%d",
+            assessment_id, len(results), total_questions,
+            total_questions - failed_questions, failed_questions,
+        )
+
         # Step 10: Mark assessment as GRADED
         Assessment.objects.filter(id=assessment_id).update(grading_status="GRADED")
 
@@ -507,6 +520,14 @@ class GraderService:
                 )
                 for fb in feedbacks
             ]
+        )
+
+        logger.info(
+            "Attempt grading summary: attempt_id=%d questions_total=%d questions_passed=%d questions_failed=%d",
+            attempt.id,
+            len(feedbacks),
+            sum(1 for feedback in feedbacks if not feedback.bedrock_error),
+            sum(1 for feedback in feedbacks if feedback.bedrock_error),
         )
 
         # Step 11: Return result
