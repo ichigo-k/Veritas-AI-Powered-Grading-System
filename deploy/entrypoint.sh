@@ -1,5 +1,4 @@
 #!/bin/sh
-set -e
 
 echo "Starting SQS grading worker..."
 python manage.py run_grading_worker &
