@@ -192,4 +192,14 @@ class HealthCheckView(APIView):
         tags=["Health"],
     )
     def get(self, request: Request) -> Response:
+        from django.db import connections
+        try:
+            conn = connections["neon"]
+            conn.ensure_connection()
+        except Exception as exc:
+            logger.error("Health check failed: database unreachable — %s", exc)
+            return Response(
+                {"status": "unhealthy", "detail": "Database unreachable"},
+                status=503,
+            )
         return Response({"status": "ok"}, status=200)
