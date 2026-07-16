@@ -8,6 +8,7 @@ Bedrock invocation per answer, score computation, and database persistence.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -181,10 +182,20 @@ class GraderService:
         # Step 7: Get the flat set of flagged attempt IDs
         flagged_attempt_ids = scanner.get_flagged_attempts(collision_map)
 
-        # Step 8 & 9: Grade all attempts concurrently
         results: list[SingleGradingResult] = []
-        for attempt in attempts:
-            results.append(self._grade_single_attempt_worker(attempt, flagged_attempt_ids, assessment.total_marks))
+        concurrency = max(1, settings.GRADING_CONCURRENCY)
+
+        if concurrency == 1:
+            for attempt in attempts:
+                results.append(self._grade_single_attempt_worker(attempt, flagged_attempt_ids, assessment.total_marks))
+        else:
+            with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                futures = {
+                    pool.submit(self._grade_single_attempt_worker, attempt, flagged_attempt_ids, assessment.total_marks): attempt
+                    for attempt in attempts
+                }
+                for future in as_completed(futures):
+                    results.append(future.result())
 
         total_questions = sum(len(result.answer_feedbacks) for result in results)
         failed_questions = sum(
