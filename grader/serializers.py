@@ -1,7 +1,3 @@
-"""
-DRF serializers for grading result responses.
-"""
-
 from rest_framework import serializers
 
 

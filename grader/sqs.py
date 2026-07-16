@@ -1,5 +1,3 @@
-"""SQS integration for asynchronous assessment grading."""
-
 import boto3
 from django.conf import settings
 

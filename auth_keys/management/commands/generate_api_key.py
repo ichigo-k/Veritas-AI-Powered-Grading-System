@@ -10,15 +10,9 @@ class Command(BaseCommand):
     help = 'Generate a new API key, store its SHA-256 hash, and print the plaintext key.'
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            '--label',
-            type=str,
-            default='',
-            help='Optional human-readable label for this key.',
-        )
+        parser.add_argument('--label', type=str, default='', help='Optional human-readable label for this key.')
 
     def handle(self, *args, **options):
-        # Generate a cryptographically random 32-byte key, hex-encoded (64 chars)
         plaintext_key = secrets.token_hex(32)
         key_hash = hashlib.sha256(plaintext_key.encode('utf-8')).hexdigest()
 
@@ -30,7 +24,5 @@ class Command(BaseCommand):
 
         self.stdout.write(plaintext_key)
         self.stderr.write(
-            self.style.SUCCESS(
-                f"API key created successfully. Label: '{options['label']}'"
-            )
+            self.style.SUCCESS(f"API key created successfully. Label: '{options['label']}'")
         )

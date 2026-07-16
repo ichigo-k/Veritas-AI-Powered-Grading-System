@@ -8,16 +8,9 @@ from .models import ApiKey
 
 
 class ApiKeyAuthentication(BaseAuthentication):
-    """
-    DRF authentication class that reads the X-API-Key header,
-    computes its SHA-256 hash, and looks up an active ApiKey record.
-    """
-
     def authenticate(self, request):
         api_key_value = request.META.get('HTTP_X_API_KEY')
         if not api_key_value:
-            # Return None to allow other authenticators to try (or DRF will
-            # raise 401 via DEFAULT_PERMISSION_CLASSES).
             return None
 
         key_hash = hashlib.sha256(api_key_value.encode('utf-8')).hexdigest()
@@ -34,8 +27,6 @@ class ApiKeyAuthentication(BaseAuthentication):
 
 
 class ApiKeyAuthenticationExtension(OpenApiAuthenticationExtension):
-    """Tells drf-spectacular how to document ApiKeyAuthentication in OpenAPI."""
-
     target_class = 'auth_keys.authentication.ApiKeyAuthentication'
     name = 'ApiKeyAuth'
 

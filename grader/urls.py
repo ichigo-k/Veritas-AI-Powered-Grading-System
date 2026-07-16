@@ -1,7 +1,3 @@
-"""
-URL patterns for the grader app.
-"""
-
 from django.urls import path
 
 from grader.views import AssessmentGradeView, AssessmentGradeStatusView, AttemptGradeView, HealthCheckView
@@ -9,24 +5,8 @@ from grader.views import AssessmentGradeView, AssessmentGradeStatusView, Attempt
 app_name = "grader"
 
 urlpatterns = [
-    path(
-        "api/health/",
-        HealthCheckView.as_view(),
-        name="health-check",
-    ),
-    path(
-        "api/grade/assessment/<int:assessment_id>/",
-        AssessmentGradeView.as_view(),
-        name="grade-assessment",
-    ),
-    path(
-        "api/grade/assessment/<int:assessment_id>/status/",
-        AssessmentGradeStatusView.as_view(),
-        name="grade-assessment-status",
-    ),
-    path(
-        "api/grade/attempt/<int:attempt_id>/",
-        AttemptGradeView.as_view(),
-        name="grade-attempt",
-    ),
+    path("api/health/", HealthCheckView.as_view(), name="health-check"),
+    path("api/grade/assessment/<int:assessment_id>/", AssessmentGradeView.as_view(), name="grade-assessment"),
+    path("api/grade/assessment/<int:assessment_id>/status/", AssessmentGradeStatusView.as_view(), name="grade-assessment-status"),
+    path("api/grade/attempt/<int:attempt_id>/", AttemptGradeView.as_view(), name="grade-attempt"),
 ]

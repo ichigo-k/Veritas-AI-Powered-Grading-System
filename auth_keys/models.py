@@ -2,7 +2,7 @@ from django.db import models
 
 
 class ApiKey(models.Model):
-    key_hash = models.CharField(max_length=64, unique=True)   # SHA-256 hex digest
+    key_hash = models.CharField(max_length=64, unique=True)
     label = models.CharField(max_length=100, blank=True, default='')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -10,7 +10,6 @@ class ApiKey(models.Model):
     class Meta:
         db_table = 'auth_keys_apikey'
 
-    
     @property
     def is_authenticated(self):
         return True

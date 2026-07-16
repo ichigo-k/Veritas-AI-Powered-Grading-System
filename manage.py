@@ -1,17 +1,14 @@
 #!/usr/bin/env python
-"""Django's command-line utility for administrative tasks."""
 import os
 import sys
 
 
 def main():
-    """Run administrative tasks."""
-    # Load .env file if present so env vars are available without uv run
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
-        pass  # dotenv not installed — rely on env vars being set externally
+        pass
 
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'verion_ai_grader.settings')
     try:
