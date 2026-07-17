@@ -39,7 +39,7 @@ class AssessmentGradeView(APIView):
         description=(
             "Grades all SUBMITTED and TIMED_OUT attempts for the given assessment concurrently. "
             "Runs plagiarism detection across all answer hashes before grading. "
-            "Adds subjective scores to the existing MCQ score on each attempt, "
+            "Recomputes the MCQ subtotal and adds the subjective scores for each attempt, "
             "writes the final score back to `assessment_attempts.score`, "
             "and sets `assessments.gradingStatus = GRADED`."
         ),

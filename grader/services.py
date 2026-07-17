@@ -377,9 +377,33 @@ class GraderService:
                 bedrock_error=False,
             ))
 
-        existing_mcq_score: float = attempt.score or 0.0
+        # `attempt.score` is the final score after the first grading run. Reusing
+        # it here as the MCQ subtotal makes every re-grade add the subjective
+        # marks again (and often cap at the assessment maximum). Rebuild the
+        # objective subtotal from the answers so grading is idempotent.
+        objective_section_ids = AssessmentSection.objects.filter(
+            assessment_id=attempt.assessment_id,
+            type="OBJECTIVE",
+        ).values_list("id", flat=True)
+        objective_questions = {
+            question.id: question
+            for question in Question.objects.filter(
+                assessment_id=attempt.assessment_id,
+                section_id__in=objective_section_ids,
+                correct_option__isnull=False,
+            )
+        }
+        mcq_score = sum(
+            float(objective_questions[answer.question_id].marks)
+            for answer in StudentAnswer.objects.filter(
+                attempt_id=attempt.id,
+                question_id__in=objective_questions,
+            )
+            if answer.selected_option
+            == objective_questions[answer.question_id].correct_option
+        )
         final_score = compute_final_score(
-            existing_mcq_score,
+            mcq_score,
             [f.total_score for f in feedbacks],
             assessment_total_marks,
         )

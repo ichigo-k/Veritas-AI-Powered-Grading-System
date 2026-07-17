@@ -53,6 +53,7 @@ class Question(models.Model):
     body = models.TextField()
     marks = models.IntegerField()
     answer_type = models.CharField(max_length=20, null=True, blank=True, db_column='answerType')
+    correct_option = models.IntegerField(null=True, blank=True, db_column='correctOption')
 
     class Meta:
         managed = False
@@ -82,6 +83,7 @@ class StudentAnswer(models.Model):
     attempt_id = models.IntegerField(db_column='attemptId')
     question_id = models.IntegerField(db_column='questionId')
     answer_text = models.TextField(null=True, blank=True, db_column='answerText')
+    selected_option = models.IntegerField(null=True, blank=True, db_column='selectedOption')
     file_url = models.TextField(null=True, blank=True, db_column='fileUrl')
     answer_hash = models.CharField(max_length=64, null=True, blank=True, db_column='answerHash')
 
