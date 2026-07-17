@@ -28,6 +28,22 @@ from grader.s3 import S3Helper, S3ResolutionError
 logger = logging.getLogger(__name__)
 
 
+def latest_eligible_attempts(assessment_id: int) -> list[AssessmentAttempt]:
+    """Return only the latest submitted/timed-out attempt for each student."""
+    ordered = AssessmentAttempt.objects.filter(
+        assessment_id=assessment_id,
+        status__in=("SUBMITTED", "TIMED_OUT"),
+    ).order_by("student_id", "-attempt_number", "-id")
+    latest: list[AssessmentAttempt] = []
+    seen_students: set[int] = set()
+    for attempt in ordered:
+        if attempt.student_id in seen_students:
+            continue
+        seen_students.add(attempt.student_id)
+        latest.append(attempt)
+    return latest
+
+
 @dataclass
 class AnswerFeedbackResult:
     question_id: int
@@ -83,12 +99,7 @@ class GraderService:
         except Assessment.DoesNotExist:
             raise Http404(f"Assessment {assessment_id} not found.")
 
-        attempts = list(
-            AssessmentAttempt.objects.filter(
-                assessment_id=assessment_id,
-                status__in=("SUBMITTED", "TIMED_OUT"),
-            )
-        )
+        attempts = latest_eligible_attempts(assessment_id)
 
         # The portal cancels through the shared assessment row. A job that was
         # cancelled while waiting in SQS must not start later.
@@ -278,12 +289,14 @@ class GraderService:
                 section_id__in=subjective_section_ids,
             ).values_list("id", flat=True)
         )
-        answers = list(
-            StudentAnswer.objects.filter(
+        answers = [
+            answer
+            for answer in StudentAnswer.objects.filter(
                 attempt_id=attempt.id,
                 question_id__in=subjective_question_ids,
             )
-        )
+            if (answer.answer_text or "").strip() or answer.file_url
+        ]
 
         feedbacks: list[AnswerFeedbackResult] = []
         error_notes_parts: list[str] = []

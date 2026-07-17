@@ -17,7 +17,7 @@ from rest_framework.views import APIView
 
 from grader.serializers import BatchGradingResultSerializer, SingleGradingResultSerializer
 
-from grader.services import GraderService
+from grader.services import GraderService, latest_eligible_attempts
 from grader.models import Assessment, AssessmentAttempt, AssessmentSection, AnswerFeedback, GradingResult, Question
 from grader.sqs import enqueue_assessment
 from admin_console.models import RequestMetric
@@ -71,18 +71,23 @@ class AssessmentGradeView(APIView):
         if assessment.grading_status == "GRADING":
             return Response(self._status_payload(assessment_id), status=202)
         try:
+            # A new run must begin at 0. Old partial/regrade rows otherwise make
+            # the lecturer's first progress poll jump to a stale value.
+            old_results = GradingResult.objects.filter(assessment_id=assessment_id)
+            AnswerFeedback.objects.filter(grading_result__in=old_results).delete()
+            old_results.delete()
             Assessment.objects.filter(id=assessment_id).update(grading_status="GRADING")
             message_id = enqueue_assessment(assessment_id)
         except Exception:
             logger.exception("Failed to enqueue assessment grading: assessment_id=%d", assessment_id)
-            Assessment.objects.filter(id=assessment_id).update(grading_status="SUBMITTED")
+            Assessment.objects.filter(id=assessment_id).update(grading_status="NOT_GRADED")
             return Response({"detail": "Unable to queue grading."}, status=503)
         logger.info("Assessment grading queued: assessment_id=%d message_id=%s", assessment_id, message_id)
         return Response({"assessment_id": assessment_id, "status": "QUEUED", "message_id": message_id, "status_url": f"/api/grade/assessment/{assessment_id}/status/"}, status=202)
 
     @staticmethod
     def _status_payload(assessment_id: int) -> dict:
-        attempt_ids = list(AssessmentAttempt.objects.filter(assessment_id=assessment_id, status__in=("SUBMITTED", "TIMED_OUT")).values_list("id", flat=True))
+        attempt_ids = [attempt.id for attempt in latest_eligible_attempts(assessment_id)]
         subjective_sections = AssessmentSection.objects.filter(assessment_id=assessment_id, type="SUBJECTIVE").values_list("id", flat=True)
         subjective_question_count = Question.objects.filter(assessment_id=assessment_id, section_id__in=subjective_sections).count()
         completed = GradingResult.objects.filter(attempt_id__in=attempt_ids)

@@ -182,24 +182,38 @@ LOGGING = {
             'style': '{',
         },
     },
+    'filters': {
+        'info_and_below': {
+            '()': 'verion_ai_grader.logging_filters.MaxLevelFilter',
+            'max_level': 'INFO',
+        },
+    },
     'handlers': {
-        'console': {
+        'stdout': {
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
+            'stream': 'ext://sys.stdout',
+            'filters': ['info_and_below'],
+        },
+        'stderr': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+            'stream': 'ext://sys.stderr',
+            'level': 'WARNING',
         },
     },
     'root': {
-        'handlers': ['console'],
+        'handlers': ['stdout', 'stderr'],
         'level': 'INFO',
     },
     'loggers': {
         'grader': {
-            'handlers': ['console'],
+            'handlers': ['stdout', 'stderr'],
             'level': 'INFO',
             'propagate': False,
         },
         'django': {
-            'handlers': ['console'],
+            'handlers': ['stdout', 'stderr'],
             'level': 'WARNING',
             'propagate': False,
         },

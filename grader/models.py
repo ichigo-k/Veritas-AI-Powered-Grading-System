@@ -36,6 +36,7 @@ class AssessmentAttempt(models.Model):
     student_id = models.IntegerField(db_column='studentId')
     status = models.CharField(max_length=20)
     score = models.FloatField(null=True, blank=True)
+    attempt_number = models.IntegerField(db_column='attemptNumber')
 
     class Meta:
         managed = False
