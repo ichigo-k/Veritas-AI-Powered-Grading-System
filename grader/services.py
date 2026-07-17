@@ -90,6 +90,17 @@ class GraderService:
             )
         )
 
+        # The portal cancels through the shared assessment row. A job that was
+        # cancelled while waiting in SQS must not start later.
+        assessment.refresh_from_db(fields=["grading_status"])
+        if assessment.grading_status != "GRADING":
+            logger.info("[grade_assessment] cancelled before start: assessment_id=%d", assessment_id)
+            return BatchGradingResult(
+                assessment_id=assessment_id,
+                graded_count=0,
+                grading_status=assessment.grading_status,
+            )
+
         unique_students = len({a.student_id for a in attempts})
         logger.info(
             "[grade_assessment] started: assessment_id=%d total_attempts=%d unique_students=%d provider=%s concurrency=%d",
@@ -130,6 +141,10 @@ class GraderService:
 
         if concurrency == 1:
             for i, attempt in enumerate(attempts, 1):
+                assessment.refresh_from_db(fields=["grading_status"])
+                if assessment.grading_status != "GRADING":
+                    logger.info("[grade_assessment] cancellation observed: assessment_id=%d", assessment_id)
+                    break
                 logger.info("[grade_assessment] grading attempt %d/%d attempt_id=%d", i, len(attempts), attempt.id)
                 results.append(
                     self._grade_single_attempt_worker(attempt, flagged_attempt_ids, assessment.total_marks)
@@ -167,6 +182,16 @@ class GraderService:
             assessment_id, len(results), total_questions,
             total_questions - failed_questions, failed_questions,
         )
+
+        assessment.refresh_from_db(fields=["grading_status"])
+        if assessment.grading_status != "GRADING":
+            logger.info("[grade_assessment] cancelled; leaving partial progress: assessment_id=%d", assessment_id)
+            return BatchGradingResult(
+                assessment_id=assessment_id,
+                graded_count=len(results),
+                grading_status=assessment.grading_status,
+                plagiarism_flags=plagiarism_flags,
+            )
 
         Assessment.objects.filter(id=assessment_id).update(grading_status="GRADED")
         logger.info("[grade_assessment] marked GRADED: assessment_id=%d", assessment_id)
