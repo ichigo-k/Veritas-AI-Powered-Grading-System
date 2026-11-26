@@ -1,6 +1,6 @@
-# verion-ai-grader
+# Veritas: AI Grading Engine
 
-A standalone Django microservice that acts as the AI grading engine for the `ai-powered-grading-system`. It connects to the shared PostgreSQL database, grades subjective answers using AWS Bedrock with rubric-guided prompts, can fetch uploaded answer files from S3 and pass them directly to multimodal Bedrock models, detects plagiarism via answer hash comparison, and writes final scores back to the database.
+`verion-ai-grader` is a standalone Django microservice that acts as the AI grading engine for the `ai-powered-grading-system`. It connects to the shared PostgreSQL database, grades subjective answers using AWS Bedrock with rubric-guided prompts, can fetch uploaded answer files from S3 and pass them directly to multimodal Bedrock models, detects plagiarism via answer hash comparison, and writes final scores back to the database.
 
 The main system handles MCQ auto-scoring at submission time. This service handles everything after that — subjective grading, score finalisation, and feedback storage.
 
